@@ -1,0 +1,4 @@
+# A front-end-only update, based on the existing local application image.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY --chown=node:node public /app/public

@@ -30,7 +30,7 @@ test('full journey: records, history, schedules, filters and deletion', async ({
   await editor.getByLabel('流程备注').fill('修正进度');
   await editor.getByRole('button', { name: '保存', exact: true }).click();
   await expect(editor).not.toBeVisible();
-  await expect(detail.locator('.detail-info')).toContainText('二面');
+  await expect(detail.locator('.detail-info [data-quick-stage]')).toHaveValue('二面');
   await detail.getByRole('button', { name: '添加日程' }).click();
   await editor.getByLabel('日程名称').fill('技术二面');
   const tomorrow = new Date(Date.now() + 86400000 + 8 * 3600000).toISOString().slice(0, 16);

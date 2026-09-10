@@ -10,7 +10,7 @@
   <aside class="sidebar">
     <a class="brand" href="/"><span class="brand-mark">↗</span><span>投递手记<small>APPLICATION JOURNAL</small></span></a>
     <div class="workspace-label">我的工作台</div>
-    <nav aria-label="主导航"><button class="nav-item active" data-page="overview"><span data-icon="grid"></span>投递总览</button><button class="nav-item" data-page="schedule"><span data-icon="calendar"></span>日程安排<span id="nav-event-count" class="nav-count">0</span></button></nav>
+    <nav aria-label="主导航"><button class="nav-item active" data-page="overview"><span data-icon="grid"></span>投递总览</button><button class="nav-item" data-page="todos"><span data-icon="check"></span>待办<span id="nav-todo-count" class="nav-count">0</span></button><button class="nav-item" data-page="schedule"><span data-icon="calendar"></span>日程安排<span id="nav-event-count" class="nav-count">0</span></button></nav>
     <div class="sidebar-note"><span class="note-spark">✳</span><p>每一份投递，<br>都是一次新的可能。</p><small>保持自己的节奏。</small></div>
     <div class="sidebar-bottom"><button class="nav-item" id="help-button"><span data-icon="help"></span>使用说明</button><div class="profile"><span class="avatar">我</span><div><strong>我的求职空间</strong><small>打开即用</small></div></div></div>
   </aside>
@@ -23,7 +23,7 @@
       <div id="dashboard" hidden>
         <section id="stats" class="stats-grid" aria-label="投递统计"></section>
         <section id="overview-page">
-          <section class="reminders-section"><div class="section-caption"><h2><span data-icon="clock"></span>近期安排 <span id="reminder-count" class="subtle-count"></span></h2><button class="text-button" data-page="schedule">查看全部日程 <span aria-hidden="true">↗</span></button></div><div id="reminders" class="reminder-grid"></div></section>
+          <section class="reminders-section"><div class="section-caption"><h2><span data-icon="clock"></span>近期安排 <span id="reminder-count" class="subtle-count"></span></h2><button class="text-button" data-page="todos">查看全部待办 <span aria-hidden="true">↗</span></button></div><div id="reminders" class="reminder-grid"></div></section>
           <section class="applications-section"><div class="section-caption"><div class="title-with-count"><h2>我的投递</h2><span id="record-count" class="count-pill">0</span></div><div class="view-switch" aria-label="投递视图"><button data-view="list" class="active" aria-pressed="true"><span data-icon="list"></span>列表</button><button data-view="board" aria-pressed="false"><span data-icon="board"></span>看板</button></div></div>
             <div id="stage-filters" class="stage-filters" aria-label="按进度筛选"></div>
             <div class="filter-toolbar"><label class="search-input"><span data-icon="search"></span><input id="search" type="search" placeholder="搜索公司或岗位…" aria-label="搜索公司或岗位" maxlength="160"></label><div class="date-filters"><label>投递时间 <input id="date-from" type="date" aria-label="投递起始日期"></label><span>—</span><input id="date-to" type="date" aria-label="投递结束日期"><button class="text-button" id="clear-filters">重置</button></div></div>
@@ -31,7 +31,18 @@
             <div class="table-footer"><span id="results-summary"></span><span>一份记录，一个新的可能</span></div>
           </section>
         </section>
-        <section id="schedule-page" hidden><div class="section-caption"><h2>我的日程</h2><span class="muted small">所有时间均为北京时间 · 仅站内提醒</span></div><div class="schedule-controls"><label>查看范围<select id="event-filter"><option value="pending">待完成</option><option value="upcoming">未来 7 天</option><option value="overdue">已逾期</option><option value="completed">已完成</option><option value="cancelled">已取消</option><option value="all">全部日程</option></select></label><p class="muted small">在投递详情中添加测评、笔试或面试安排。</p></div><div id="schedule-list"></div></section>
+        <section id="todos-page" hidden aria-label="待办工作台">
+          <div id="todo-summary" class="todo-summary" aria-label="待办统计"></div>
+          <div class="section-caption"><div><h2>我的待办 <span id="todo-result-count" class="subtle-count"></span></h2><p class="muted small todo-hint">导入或添加的日程会自动显示；完成待办不会自动改变岗位进度。</p></div><button class="button primary" data-new-todo><span data-icon="plus"></span>添加待办</button></div>
+          <div class="todo-toolbar">
+            <label class="search-input"><span data-icon="search"></span><input id="todo-search" type="search" placeholder="搜索公司、岗位或待办…" aria-label="搜索待办" maxlength="160"></label>
+            <label>待办范围<select id="todo-filter" aria-label="待办范围"><option value="pending">全部未完成</option><option value="overdue">已逾期</option><option value="today">今天</option><option value="upcoming">未来 7 天</option><option value="completed">已完成</option><option value="cancelled">已取消</option><option value="all">全部安排</option><option value="unscheduled">进行中 · 待补时间</option></select></label>
+            <label>待办类型<select id="todo-kind" aria-label="待办类型"><option value="">全部类型</option><option>测评截止</option><option>笔试</option><option>面试</option><option>其他</option></select></label>
+          </div>
+          <p class="muted small todo-hint">所有时间按北京时间显示。只有备注里提到日期、尚未填写日程时间的记录，不会生成精确截止提醒。</p>
+          <div id="todo-list" aria-live="polite"></div>
+        </section>
+        <section id="schedule-page" hidden><div class="section-caption"><h2>我的日程</h2><span class="muted small">所有时间均为北京时间 · 仅站内提醒</span></div><div class="schedule-controls"><label>查看范围<select id="event-filter"><option value="pending">待完成</option><option value="upcoming">未来 7 天</option><option value="overdue">已逾期</option><option value="completed">已完成</option><option value="cancelled">已取消</option><option value="all">全部日程</option></select></label><p class="muted small">在投递详情或待办页添加测评、笔试或面试安排。</p></div><div id="schedule-list"></div></section>
         <footer class="page-footer"><span><span class="connection-dot"></span>数据保存在你的服务器</span><span id="last-refreshed"></span></footer>
       </div>
     </main>

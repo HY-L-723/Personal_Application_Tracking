@@ -30,6 +30,8 @@ const localInput = value => value ? new Date(Date.parse(value) + 8 * 3600000).to
 const beijingDate = value => localInput(value).slice(0, 10);
 const toISO = value => value ? new Date(`${value}+08:00`).toISOString() : null;
 const badge = stage => `<span class="stage-badge stage-${STAGES.indexOf(stage)}">${escape(stage)}</span>`;
+const savingStages = new Set();
+const stageSelect = a => `<select class="stage-select stage-${STAGES.indexOf(a.stage)}" data-quick-stage="${a.id}" data-version="${a.version}" aria-label="${escape(a.company)} ${escape(a.role)} 当前进度" title="选择后自动保存；可在流程历史中纠正" ${savingStages.has(a.id) ? 'disabled' : ''}>${STAGES.map(s => `<option value="${escape(s)}" ${s === a.stage ? 'selected' : ''}>${s === '笔试' ? '笔试 / 测评' : escape(s)}</option>`).join('')}</select>`;
 const avatar = company => `<span class="company-avatar tone-${[...company].reduce((n, c) => n + c.codePointAt(0), 0) % 5}">${escape([...company][0] || '企')}</span>`;
 const safeLink = (url, label = '打开链接') => url ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(label)} ↗</a>` : '<span class="muted">未填写</span>';
 const state = { applications: [], events: [], stats: null, page: 'overview', stage: '', view: 'list', detail: null, timeOffset: 0, ready: false };
@@ -73,8 +75,9 @@ async function loadData() {
   } finally { if (sequence === loadSequence) $('#refresh-button').disabled = false; }
 }
 function renderAll() {
-  renderStats(); renderReminders(); renderStages(); renderApplications(); renderSchedule();
+  renderStats(); renderReminders(); renderStages(); renderApplications(); renderSchedule(); renderTodos();
   $('#nav-event-count').textContent = state.events.filter(e => e.status === 'pending').length;
+  $('#nav-todo-count').textContent = state.events.filter(e => e.status === 'pending').length;
 }
 function renderStats() {
   const { stats } = state;
@@ -127,13 +130,13 @@ function renderApplications() {
   if (state.view === 'board') {
     $('#applications').innerHTML = `<div class="board" aria-label="流程看板">${(state.stage ? [state.stage] : STAGES).map(stage => {
       const matches = records.filter(a => a.stage === stage);
-      return `<section class="board-column"><h3>${badge(stage)}<small>${matches.length}</small></h3>${matches.length ? matches.map(a => `<button class="board-card" data-detail="${a.id}"><strong>${escape(a.company)}</strong><p>${escape(a.role)}</p><small>${a.applied_at ? format(a.applied_at) + ' 投递' : '尚未填写投递时间'}</small></button>`).join('') : '<div class="board-empty">暂无记录</div>'}</section>`;
+      return `<section class="board-column"><h3>${badge(stage)}<small>${matches.length}</small></h3>${matches.length ? matches.map(a => `<article class="board-card"><button class="board-open" data-detail="${a.id}"><strong>${escape(a.company)}</strong><p>${escape(a.role)}</p><small>${a.applied_at ? format(a.applied_at) + ' 投递' : '尚未填写投递时间'}</small></button><div class="board-progress"><span>进度</span>${stageSelect(a)}</div></article>`).join('') : '<div class="board-empty">暂无记录</div>'}</section>`;
     }).join('')}</div>`;
     return;
   }
   $('#applications').innerHTML = `<div class="table-wrap"><table class="application-table"><thead><tr><th>公司</th><th>投递岗位</th><th>当前进度</th><th>投递时间</th><th class="next-col">下一项安排</th><th>操作</th></tr></thead><tbody>${records.map(a => {
     const next = state.events.find(e => e.application_id === a.id && e.status === 'pending');
-    return `<tr><td><div class="company-cell">${avatar(a.company)}<div><button class="company-name" data-detail="${a.id}">${escape(a.company)}</button><div class="company-sub">APPLICATION · ${String(a.id).padStart(3, '0')}</div></div></div></td><td class="role-text">${escape(a.role)}</td><td>${badge(a.stage)}</td><td class="date-cell">${a.applied_at ? format(a.applied_at, { year: 'numeric' }) : '尚未投递'}</td><td class="next-col"><div class="next-event ${next && isOverdue(next) ? 'is-overdue' : ''}">${next ? `${escape(next.title)}<br>${format(next.due_at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}${isOverdue(next) ? ' · 逾期' : ''}` : '—'}</div></td><td><button class="row-action" data-detail="${a.id}" aria-label="查看 ${escape(a.company)} ${escape(a.role)}">详情 ↗</button></td></tr>`;
+    return `<tr><td><div class="company-cell">${avatar(a.company)}<div><button class="company-name" data-detail="${a.id}">${escape(a.company)}</button><div class="company-sub">APPLICATION · ${String(a.id).padStart(3, '0')}</div></div></div></td><td class="role-text">${escape(a.role)}</td><td>${stageSelect(a)}</td><td class="date-cell">${a.applied_at ? format(a.applied_at, { year: 'numeric' }) : '尚未投递'}</td><td class="next-col"><div class="next-event ${next && isOverdue(next) ? 'is-overdue' : ''}">${next ? `${escape(next.title)}<br>${format(next.due_at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}${isOverdue(next) ? ' · 逾期' : ''}` : '—'}</div></td><td><button class="row-action" data-detail="${a.id}" aria-label="查看 ${escape(a.company)} ${escape(a.role)}">详情 ↗</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function renderSchedule() {
@@ -142,12 +145,76 @@ function renderSchedule() {
   $('#schedule-list').innerHTML = events.length ? events.map(e => `<article class="event-row"><div class="event-date"><small>${format(e.due_at, { month: 'short', day: undefined })}</small><strong>${format(e.due_at, { month: undefined, day: '2-digit' })}</strong></div><div class="event-description"><h3>${escape(e.title)}</h3><p>${escape(e.company)} · ${escape(e.role)}</p><p>${fullTime(e.due_at)} · ${escape(e.kind)}</p></div>${eventTag(e)}<div class="event-actions">${e.status === 'pending' ? `<button class="button small-button" data-complete-event="${e.id}">${icon('check')}完成</button>` : ''}<button class="button small-button" data-detail="${e.application_id}">查看投递 ↗</button></div></article>`).join('') : empty('calendar', '这里暂时没有日程', '在投递详情中添加安排，或切换查看范围。');
 }
 function setPage(page) {
+  if (!['overview', 'todos', 'schedule'].includes(page)) page = 'overview';
   state.page = page;
   $('#overview-page').hidden = page !== 'overview'; $('#schedule-page').hidden = page !== 'schedule';
+  $('#todos-page').hidden = page !== 'todos'; $('#stats').hidden = page === 'todos';
   $$('.sidebar [data-page]').forEach(button => button.classList.toggle('active', button.dataset.page === page));
-  $('#breadcrumb-current').textContent = page === 'overview' ? '投递总览' : '日程安排';
-  $('#page-title').innerHTML = page === 'overview' ? '每一步，都有迹可循<span>。</span>' : '为下一次机会，留好时间<span>。</span>';
-  $('#page-subtitle').textContent = page === 'overview' ? '把机会记下来，把进展握在手里。' : '测评、笔试、面试，把重要的安排放在眼前。';
+  $('#breadcrumb-current').textContent = { overview: '投递总览', todos: '待办', schedule: '日程安排' }[page];
+  $('#page-title').innerHTML = page === 'overview' ? '每一步，都有迹可循<span>。</span>' : page === 'todos' ? '下一步，心中有数<span>。</span>' : '为下一次机会，留好时间<span>。</span>';
+  $('#page-subtitle').textContent = page === 'overview' ? '把机会记下来，把进展握在手里。' : page === 'todos' ? '先处理重要的事，再向下一站出发。' : '测评、笔试、面试，把重要的安排放在眼前。';
+  const url = new URL(location.href); url.hash = page === 'overview' ? '' : page;
+  if (url.href !== location.href) history.replaceState(null, '', url);
+}
+function renderTodos() {
+  const filter = $('#todo-filter').value;
+  const kind = $('#todo-kind').value;
+  const query = $('#todo-search').value.trim().toLocaleLowerCase();
+  const today = beijingDate(new Date(currentTime()).toISOString());
+  const pending = state.events.filter(e => e.status === 'pending');
+  const unscheduled = state.applications.filter(a => ['笔试', '一面', '二面', 'HR面'].includes(a.stage) && !pending.some(e => e.application_id === a.id));
+  const summaries = [['overdue', '已逾期', pending.filter(isOverdue).length], ['today', '今天待办', pending.filter(e => beijingDate(e.due_at) === today).length], ['upcoming', '未来 7 天', pending.filter(isUpcoming).length], ['unscheduled', '进行中 · 待补时间', unscheduled.length]];
+  $('#todo-summary').innerHTML = summaries.map(([value, label, count]) => `<button data-todo-filter="${value}" class="${value === 'overdue' && count ? 'urgent' : ''}" aria-pressed="${filter === value}">${label}<strong>${count}</strong></button>`).join('');
+  $('#todo-kind').disabled = filter === 'unscheduled';
+  if (filter === 'unscheduled') {
+    const records = unscheduled.filter(a => `${a.company} ${a.role}`.toLocaleLowerCase().includes(query));
+    $('#todo-result-count').textContent = `${records.length} 个岗位`;
+    $('#todo-list').innerHTML = records.length ? `<p class="todo-hint muted small">这些岗位正在笔试或面试阶段，但没有待完成日程。已有时间可直接补充；尚未收到安排时无需填写。</p>${records.map(a => `<article class="todo-card"><div class="todo-main"><button class="company-name" data-detail="${a.id}">${escape(a.company)}</button><p class="todo-role">${escape(a.role)}</p><p class="todo-note">尚无待完成的时间安排，不代表已逾期。</p><div class="event-actions"><button class="button small-button" data-add-todo="${a.id}">补充时间</button><button class="text-button" data-detail="${a.id}">查看投递 ↗</button></div></div><div class="todo-progress"><span>岗位进度</span>${stageSelect(a)}</div></article>`).join('')}` : empty('calendar', '没有待补时间的岗位', '正在进行的岗位，尚无待完成日程时会出现在这里。');
+    return;
+  }
+  const applications = new Map(state.applications.map(a => [a.id, a]));
+  const events = state.events.filter(e => {
+    const matchesScope = filter === 'all' || (filter === 'today' ? e.status === 'pending' && beijingDate(e.due_at) === today : filter === 'overdue' ? isOverdue(e) : filter === 'upcoming' ? isUpcoming(e) : e.status === filter);
+    return matchesScope && (!kind || e.kind === kind) && (!query || `${e.company} ${e.role} ${e.title}`.toLocaleLowerCase().includes(query));
+  }).sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at) || a.id - b.id);
+  $('#todo-result-count').textContent = `${events.length} 项`;
+  if (!events.length) {
+    $('#todo-list').innerHTML = empty('check', '当前范围没有待办', '可以切换筛选范围，或为投递记录添加时间安排。', '<button class="button" data-new-todo>添加待办</button>');
+    return;
+  }
+  const groups = new Map();
+  for (const event of events) {
+    const day = beijingDate(event.due_at);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(event);
+  }
+  $('#todo-list').innerHTML = [...groups].map(([day, items]) => `<section class="todo-group"><h3>${day === today ? '今天 · ' : ''}${escape(day)}<small>${items.length} 项</small></h3>${items.map(e => {
+    const a = applications.get(e.application_id);
+    return `<article class="todo-card ${isOverdue(e) ? 'is-overdue' : ''}" data-todo-event="${e.id}"><div class="todo-main"><div class="todo-card-heading"><h4>${escape(e.title)}</h4>${eventTag(e)}</div><button class="company-name" data-detail="${e.application_id}">${escape(e.company)}</button><p class="todo-role">${escape(e.role)}</p><p class="todo-time">${escape(e.kind)} · ${fullTime(e.due_at)}</p>${e.notes ? `<details><summary>查看备注</summary><p class="todo-note">${escape(e.notes)}</p></details>` : ''}<div class="event-actions">${e.status === 'pending' ? `<button class="button small-button" data-complete-event="${e.id}">${icon('check')}完成</button><button class="text-button" data-cancel-event="${e.id}">取消待办</button>` : `<button class="button small-button" data-reopen-event="${e.id}">恢复待办</button>`}<button class="text-button" data-edit-event="${e.id}">编辑时间 / 备注</button><button class="text-button" data-detail="${e.application_id}">查看投递 ↗</button>${e.url ? safeLink(e.url, '打开日程链接') : ''}</div></div><div class="todo-progress"><span>岗位进度</span>${a ? stageSelect(a) : '<span>记录待刷新</span>'}<span>待办：${EVENT_STATUS[e.status]}</span></div></article>`;
+  }).join('')}</section>`).join('');
+}
+async function quickChangeStage(select) {
+  const id = Number(select.dataset.quickStage);
+  if (savingStages.has(id)) return;
+  const version = Number(select.dataset.version);
+  // The drawer may be newer than the list. Never pair fresh version numbers with stale metadata.
+  const a = [state.detail, ...state.applications].find(a => a?.id === id && a.version === version);
+  const stage = select.value;
+  if (!a) { notify('记录已变化，请刷新后重试。', true); await loadData(); return; }
+  if (stage === a.stage) return;
+  savingStages.add(id);
+  $$(`[data-quick-stage="${id}"]`).forEach(el => { el.disabled = true; });
+  try {
+    await api(`/applications/${id}`, { method: 'PUT', body: { ...a, version, stage, history_note: '通过快捷下拉更新进度' } });
+    notify(`进度已更新为「${stage === '笔试' ? '笔试 / 测评' : stage}」`);
+  } catch (error) { notify(error.message, true); }
+  finally {
+    savingStages.delete(id);
+    await loadData();
+    // Even if refreshing failed, restore the control from the last confirmed snapshot.
+    if (!$('#page-error').hidden) renderAll();
+    if ($('#detail-dialog').open && state.detail?.id === id) await showDetail(id);
+  }
 }
 function resetFilters() {
   state.stage = ''; $('#search').value = ''; $('#date-from').value = ''; $('#date-to').value = '';
@@ -163,6 +230,7 @@ async function showDetail(id) {
     if (sequence !== detailSequence || !dialog.open) return;
     state.detail = record;
     renderDetail();
+    $('.detail-info dd', dialog).innerHTML = stageSelect(record);
   } catch (error) {
     if (sequence !== detailSequence) return;
     dialog.innerHTML = `<div class="dialog-header"><h2 id="detail-title">投递详情</h2><button class="icon-button" data-close="detail-dialog" aria-label="关闭详情">${icon('close')}</button></div><div class="empty">${escape(error.message)}<br><button class="button" data-detail="${Number(id)}">重试</button></div>`;
@@ -218,18 +286,25 @@ function editApplication(existing = null) {
       if ($('#detail-dialog').open) state.detail = result;
     });
 }
-function findEvent(id) { return state.detail?.events.find(e => e.id === Number(id)) || state.events.find(e => e.id === Number(id)); }
-function editEvent(existing = null) {
+function findEvent(id) { return state.events.find(e => e.id === Number(id)) || state.detail?.events.find(e => e.id === Number(id)); }
+function editEvent(existing = null, targetId = existing?.application_id ?? state.detail?.id) {
+  if (!existing && !state.applications.length) { notify('请先新增一条投递，再为它添加待办。'); return; }
   const e = existing || { title: '', kind: '面试', due_at: '', url: '', notes: '', status: 'pending' };
-  const applicationId = state.detail.id;
+  const applicationId = targetId;
+  const application = state.applications.find(a => a.id === applicationId);
   openEditor(existing ? '编辑日程' : '添加日程',
+    (!existing ? field('application_id', '关联投递', applicationId ? String(applicationId) : '', { required: true, wide: true, options: [['', '请选择公司与岗位'], ...state.applications.map(a => [String(a.id), `${a.company} · ${a.role}`])] }) : `<p class="form-field wide muted small">关联投递：${escape(application ? `${application.company} · ${application.role}` : '')}</p>`) +
     field('title', '日程名称', e.title, { required: true, wide: true, max: 160, placeholder: '例如：一面 / 在线测评截止' }) +
     field('kind', '日程类型', e.kind, { options: ['测评截止', '笔试', '面试', '其他'] }) +
     field('status', '日程状态', e.status, { options: Object.entries(EVENT_STATUS) }) +
     field('due_at', '安排时间 / 截止时间（北京时间）', localInput(e.due_at), { required: true, wide: true, type: 'datetime-local', hint: '未来 7 天内出现在近期安排；超过时间显示为逾期。' }) +
     field('url', '日程链接', e.url, { type: 'url', wide: true, max: 2000, placeholder: '测评、会议或面试链接 https://' }) +
     field('notes', '备注', e.notes, { type: 'textarea', wide: true, max: 10000, placeholder: '会议号、面试地点、需要准备的材料…' }),
-    data => api(existing ? `/events/${e.id}` : `/applications/${applicationId}/events`, { method: existing ? 'PUT' : 'POST', body: { ...data, due_at: toISO(data.due_at), ...(existing ? { version: e.version } : {}) } }));
+    data => {
+      const id = existing ? applicationId : Number(data.application_id);
+      if (!id || !state.applications.some(a => a.id === id)) throw new Error('请选择有效的公司与岗位。');
+      return api(existing ? `/events/${e.id}` : `/applications/${id}/events`, { method: existing ? 'PUT' : 'POST', body: { ...data, due_at: toISO(data.due_at), ...(existing ? { version: e.version } : {}) } });
+    });
 }
 function editHistory(id) {
   const a = state.detail;
@@ -268,6 +343,9 @@ document.addEventListener('click', async event => {
   try {
     if (d.close) { $(`#${d.close}`).close(); return; }
     if (d.page) { setPage(d.page); return; }
+    if ('todoFilter' in d) { $('#todo-filter').value = d.todoFilter; renderTodos(); return; }
+    if ('newTodo' in d) { editEvent(null, null); return; }
+    if ('addTodo' in d) { editEvent(null, Number(d.addTodo)); return; }
     if ('detail' in d) { await showDetail(d.detail); return; }
     if ('stage' in d) { state.stage = d.stage; renderStages(); renderApplications(); return; }
     if (d.view) {
@@ -294,8 +372,14 @@ document.addEventListener('click', async event => {
 $('#detail-dialog').addEventListener('close', () => { ++detailSequence; });
 ['search', 'date-from', 'date-to'].forEach(id => $(`#${id}`).addEventListener('input', () => { if (state.ready) renderApplications(); }));
 $('#event-filter').addEventListener('change', renderSchedule);
+$('#todo-filter').addEventListener('change', renderTodos);
+$('#todo-kind').addEventListener('change', renderTodos);
+$('#todo-search').addEventListener('input', renderTodos);
+document.addEventListener('change', event => { if (event.target.matches('[data-quick-stage]')) void quickChangeStage(event.target); });
+window.addEventListener('hashchange', () => setPage(location.hash.slice(1)));
 icons();
+setPage(location.hash.slice(1));
 $('#today-label').textContent = format(new Date().toISOString(), { year: 'numeric', weekday: 'short' });
 await loadData();
 // Recalculate time-sensitive reminders while the page stays open; no background notifications.
-setInterval(() => { if (state.ready && !document.hidden) { renderStats(); renderReminders(); renderSchedule(); } }, 60000);
+setInterval(() => { if (state.ready && !document.hidden) { renderStats(); renderReminders(); renderSchedule(); if (!$('#todos-page').contains(document.activeElement)) renderTodos(); } }, 60000);
