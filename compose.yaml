@@ -1,0 +1,21 @@
+name: application-tracker
+services:
+  tracker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "1"
+    volumes:
+      - tracker-data:/app/data
+      - tracker-backups:/app/backups
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  tracker-data:
+  tracker-backups:

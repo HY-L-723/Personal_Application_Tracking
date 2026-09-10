@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3d644e"><title>投递手记 · 我的秋招工作台</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css"><script src="/assets/app.js" type="module"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-mark">↗</span><span>投递手记<small>APPLICATION JOURNAL</small></span></a>
+    <div class="workspace-label">我的工作台</div>
+    <nav aria-label="主导航"><button class="nav-item active" data-page="overview"><span data-icon="grid"></span>投递总览</button><button class="nav-item" data-page="schedule"><span data-icon="calendar"></span>日程安排<span id="nav-event-count" class="nav-count">0</span></button></nav>
+    <div class="sidebar-note"><span class="note-spark">✳</span><p>每一份投递，<br>都是一次新的可能。</p><small>保持自己的节奏。</small></div>
+    <div class="sidebar-bottom"><button class="nav-item" id="help-button"><span data-icon="help"></span>使用说明</button><div class="profile"><span class="avatar">我</span><div><strong>我的求职空间</strong><small>仅自己可见</small></div><button class="icon-button" id="logout-button" aria-label="退出登录" title="退出登录"><span data-icon="logout"></span></button></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span class="breadcrumb">我的工作台 <span>/</span> <strong id="breadcrumb-current">投递总览</strong></span><div class="topbar-actions"><span id="today-label"></span><span class="timezone">北京时间</span><button class="icon-button" id="refresh-button" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button><button class="icon-button mobile-logout" data-logout aria-label="退出登录" title="退出登录"><span data-icon="logout"></span></button></div></header>
+    <main id="main-content">
+      <section class="page-heading"><div><div class="eyebrow">YOUR NEXT CHAPTER</div><h1 id="page-title">每一步，都有迹可循<span>。</span></h1><p id="page-subtitle">把机会记下来，把进展握在手里。</p></div><button class="button primary" id="new-application"><span data-icon="plus"></span>新增投递</button></section>
+      <div id="page-error" class="page-error" role="alert" hidden></div>
+      <div id="loading" class="empty loading-state">正在打开你的求职手记…</div>
+      <div id="dashboard" hidden>
+        <section id="stats" class="stats-grid" aria-label="投递统计"></section>
+        <section id="overview-page">
+          <section class="reminders-section"><div class="section-caption"><h2><span data-icon="clock"></span>近期安排 <span id="reminder-count" class="subtle-count"></span></h2><button class="text-button" data-page="schedule">查看全部日程 <span aria-hidden="true">↗</span></button></div><div id="reminders" class="reminder-grid"></div></section>
+          <section class="applications-section"><div class="section-caption"><div class="title-with-count"><h2>我的投递</h2><span id="record-count" class="count-pill">0</span></div><div class="view-switch" aria-label="投递视图"><button data-view="list" class="active" aria-pressed="true"><span data-icon="list"></span>列表</button><button data-view="board" aria-pressed="false"><span data-icon="board"></span>看板</button></div></div>
+            <div id="stage-filters" class="stage-filters" aria-label="按进度筛选"></div>
+            <div class="filter-toolbar"><label class="search-input"><span data-icon="search"></span><input id="search" type="search" placeholder="搜索公司或岗位…" aria-label="搜索公司或岗位" maxlength="160"></label><div class="date-filters"><label>投递时间 <input id="date-from" type="date" aria-label="投递起始日期"></label><span>—</span><input id="date-to" type="date" aria-label="投递结束日期"><button class="text-button" id="clear-filters">重置</button></div></div>
+            <p id="filter-error" class="form-error" role="alert"></p><div id="applications"></div>
+            <div class="table-footer"><span id="results-summary"></span><span>一份记录，一个新的可能</span></div>
+          </section>
+        </section>
+        <section id="schedule-page" hidden><div class="section-caption"><h2>我的日程</h2><span class="muted small">所有时间均为北京时间 · 仅站内提醒</span></div><div class="schedule-controls"><label>查看范围<select id="event-filter"><option value="pending">待完成</option><option value="upcoming">未来 7 天</option><option value="overdue">已逾期</option><option value="completed">已完成</option><option value="cancelled">已取消</option><option value="all">全部日程</option></select></label><p class="muted small">在投递详情中添加测评、笔试或面试安排。</p></div><div id="schedule-list"></div></section>
+        <footer class="page-footer"><span><span class="connection-dot"></span>数据保存在你的服务器</span><span id="last-refreshed"></span></footer>
+      </div>
+    </main>
+  </div>
+  <dialog id="detail-dialog" class="drawer" aria-labelledby="detail-title"></dialog>
+  <dialog id="editor-dialog" class="editor-dialog" aria-labelledby="editor-title"></dialog>
+  <dialog id="help-dialog" class="editor-dialog" aria-labelledby="help-title"><div class="dialog-header"><h2 id="help-title">关于这本投递手记</h2><button class="icon-button" data-close="help-dialog" aria-label="关闭使用说明">✕</button></div><div class="help-content"><p>一条记录对应一家公司的一个岗位。录入岗位后，在详情页更新进度、安排日程。</p><h3>时间与提醒</h3><p>所有日期和时间按北京时间显示。未来 7 天内的待完成日程显示为近期安排，超过时间的事项显示为逾期。完成或取消日程后不再提醒。关闭网页不会发送通知。</p><h3>统计口径</h3><p>已投递数量：填写了投递时间的记录。流程反馈率：其中曾进入笔试或面试阶段，或当前为 Offer / 拒绝的记录占比，每条只计算一次；不代表邮件实际回复率。Offer 数按当前阶段统计。</p><h3>流程与同步</h3><p>进度可以跳过阶段。编辑流程历史可纠正录入错误，系统按最近发生的流程确定当前阶段。电脑和手机通过同一网址访问，刷新即可获取最新数据；首页统计始终基于全部记录。</p></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
