@@ -9,3 +9,4 @@ test-results
 playwright-report
 tests
 *.log
+offline-node-base.tar

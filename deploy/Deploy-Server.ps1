@@ -9,7 +9,8 @@ param(
     [int]$SshPort = 22,
     [ValidateRange(1024, 65535)]
     [int]$AppPort = 3003,
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+    [switch]$Offline
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Split-Path -Parent $PSScriptRoot).Replace('\', '/')
@@ -29,16 +30,36 @@ try {
     $archive = Join-Path $outputDir "application-tracking-$release.tar"
     & git -c "safe.directory=$projectRoot" archive --format=tar "--output=$archive" HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Source packaging failed.' }
+    $mode = 'online'
+    if ($Offline) {
+        $offlineBundle = & (Join-Path $PSScriptRoot 'Prepare-Offline.ps1')
+        & tar -rf $archive -C $offlineBundle.BaseDirectory offline-node-base.tar
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot add the offline base image to the package.' }
+        & tar -rf $archive -C $offlineBundle.DependenciesDirectory production_modules
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot add production dependencies to the package.' }
+        Write-Host 'Compressing the offline deployment package...'
+        $compressedArchive = $archive + '.gz'
+        $inputStream = [System.IO.File]::OpenRead($archive)
+        try {
+            $outputStream = [System.IO.File]::Create($compressedArchive)
+            try {
+                $gzip = New-Object System.IO.Compression.GZipStream($outputStream, [System.IO.Compression.CompressionMode]::Compress)
+                try { $inputStream.CopyTo($gzip) } finally { $gzip.Dispose() }
+            } finally { $outputStream.Dispose() }
+        } finally { $inputStream.Dispose() }
+        $archive = $compressedArchive
+        $mode = 'offline'
+    }
     Write-Host "Source revision: $version"
     Write-Host "Package: $archive"
     if ($PrepareOnly) { return }
     $target = "${UserName}@${ServerAddress}"
-    $remoteArchive = "/tmp/application-tracking-$release.tar"
+    $remoteArchive = "/tmp/" + [System.IO.Path]::GetFileName($archive)
     Write-Host 'Uploading source. Enter the SSH password when prompted (input is hidden).'
     & scp -P $SshPort $archive "${target}:$remoteArchive"
     if ($LASTEXITCODE -ne 0) { throw 'Upload failed. No deployment was started.' }
     Write-Host 'Connecting to deploy. SSH and sudo may request the password again.'
-    $remoteCommand = 'set -eu; release_dir=$(mktemp -d /tmp/application-tracking.XXXXXXXX); tar -xf "{0}" -C "$release_dir"; bash "$release_dir/deploy/run-docker.sh" "{1}" "{2}"' -f $remoteArchive, $AppPort, $version
+    $remoteCommand = 'set -eu; release_dir=$(mktemp -d /tmp/application-tracking.XXXXXXXX); tar -xf "{0}" -C "$release_dir"; bash "$release_dir/deploy/run-docker.sh" "{1}" "{2}" "{3}"' -f $remoteArchive, $AppPort, $version, $mode
     & ssh -t -p $SshPort $target $remoteCommand
     if ($LASTEXITCODE -ne 0) { throw 'Deployment did not complete. Keep the terminal output for diagnosis.' }
     Write-Host "Server-side deployment completed: http://${ServerAddress}:$AppPort/"

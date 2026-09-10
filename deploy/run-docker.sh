@@ -3,6 +3,10 @@
 set -Eeuo pipefail
 port="${1:-3003}"
 revision="${2:-}"
+mode="${3:-online}"
+if [[ "$mode" != 'online' && "$mode" != 'offline' ]]; then
+  echo 'Invalid deployment mode.' >&2; exit 1
+fi
 if [[ ! "$port" =~ ^[0-9]+$ ]] || (( port < 1024 || port > 65535 )); then
   echo 'Invalid application port.' >&2; exit 1
 fi
@@ -46,8 +50,23 @@ for volume in "$data_volume" "$backup_volume"; do
     fi
   fi
 done
-echo "Building $image from uploaded source..."
-"${docker_cmd[@]}" build --tag "$image" "$root_dir"
+if [[ "$mode" == 'offline' ]]; then
+  architecture="$("${docker_cmd[@]}" info --format '{{.Architecture}}')"
+  if [[ "$architecture" != 'x86_64' && "$architecture" != 'amd64' ]]; then
+    echo 'This offline package requires a Linux amd64 server.' >&2; exit 1
+  fi
+  if [[ ! -s "$root_dir/offline-node-base.tar" || ! -d "$root_dir/production_modules/express" ]]; then
+    echo 'The offline image or production dependencies are missing.' >&2; exit 1
+  fi
+  echo 'Importing the uploaded Node.js image without accessing a registry...'
+  "${docker_cmd[@]}" load --input "$root_dir/offline-node-base.tar"
+  "${docker_cmd[@]}" image inspect node:24-bookworm-slim >/dev/null
+  echo "Building $image with networking disabled..."
+  "${docker_cmd[@]}" build --tag "$image" --pull=false --network none --file "$root_dir/deploy/Dockerfile.offline" "$root_dir"
+else
+  echo "Building $image from uploaded source..."
+  "${docker_cmd[@]}" build --tag "$image" "$root_dir"
+fi
 for volume in "$data_volume" "$backup_volume"; do
   if ! "${docker_cmd[@]}" volume inspect "$volume" >/dev/null 2>&1; then
     "${docker_cmd[@]}" volume create --label "app.owner=$owner_label" "$volume" >/dev/null

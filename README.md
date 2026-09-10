@@ -61,6 +61,18 @@ npm start
 
 成功后访问 http://服务器IP:3003/，云安全组若有限制需允许 TCP 3003。后续可为此端口配置域名和 HTTPS。此方式备份使用 sudo docker exec personal-application-tracking node scripts/backup.js。
 
+### 服务器无法访问 Docker Hub 时
+
+使用本机准备离线包，再上传到服务器：
+
+```powershell
+.\deploy\Deploy-Server.ps1 -ServerAddress 服务器IP -Offline
+```
+
+此模式在本机下载官方 Node.js 镜像并安装生产依赖，压缩后上传；服务器只导入镜像并以禁用网络的模式构建，不访问 Docker Hub 或 npm，不更改全局镜像源。当前离线包面向 Linux amd64 服务器，适用于本项目无原生扩展的生产依赖。
+
+本机需要能连接 GitHub、Docker Hub 和 npm。镜像下载使用固定版本、校验 SHA-256 的 Google go-containerregistry 工具，文件保存在被 Git 忽略的 .local/offline。可追加 -PrepareOnly 先验证打包而不连接服务器。
+
 ## 云服务器部署（Docker Compose）
 
 服务器需安装 Docker 和 Compose，并准备域名、HTTPS 证书及 Nginx。本项目不自动更改服务器现有配置。
