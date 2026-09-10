@@ -45,6 +45,22 @@ npm start
 
 从有密码的旧版本更新时，直接重启服务即可。原有投递、流程历史和日程保持不变；旧密码文件和会话不再被使用，旧 `/login` 地址会跳转到首页。
 
+## 现有 Docker 服务器部署（无需 Compose）
+
+服务器已有 Docker 时，在本机项目目录运行：
+
+```powershell
+.\deploy\Deploy-Server.ps1 -ServerAddress 服务器IP
+```
+
+默认 SSH 用户 ubuntu、端口 22、网站端口 3003；可用 -UserName、-SshPort、-AppPort 修改。上传和执行时按终端提示输入 SSH 密码，必要时还需 sudo 密码，密码不会写入文件。
+
+脚本只打包已提交源码，不包含本地数据库，首次部署数据库为空。无需服务器安装 Node.js 或连接 GitHub；构建仍需访问 Docker 镜像源和 npm 仓库。可添加 -PrepareOnly 仅打包，不连接服务器。
+
+使用独立容器 personal-application-tracking 和命名卷 pat-tracker-data、pat-tracker-backups。部署前检查端口、同名容器和卷，不修改已有网站、Nginx、防火墙或云安全组。已有不同版本的容器时停止，需另行安排备份和升级。
+
+成功后访问 http://服务器IP:3003/，云安全组若有限制需允许 TCP 3003。后续可为此端口配置域名和 HTTPS。此方式备份使用 sudo docker exec personal-application-tracking node scripts/backup.js。
+
 ## 云服务器部署（Docker Compose）
 
 服务器需安装 Docker 和 Compose，并准备域名、HTTPS 证书及 Nginx。本项目不自动更改服务器现有配置。
