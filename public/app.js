@@ -12,7 +12,6 @@ const paths = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
   arrow: '<path d="M6 18 18 6M6 6h12v12"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4M12 17h.01"/>',
-  logout: '<path d="M9 4H4v16h5M14 8l4 4-4 4M8 12h12"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   briefcase: '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12a20 20 0 0 0 18 0M12 11v4"/>',
@@ -33,7 +32,7 @@ const toISO = value => value ? new Date(`${value}+08:00`).toISOString() : null;
 const badge = stage => `<span class="stage-badge stage-${STAGES.indexOf(stage)}">${escape(stage)}</span>`;
 const avatar = company => `<span class="company-avatar tone-${[...company].reduce((n, c) => n + c.codePointAt(0), 0) % 5}">${escape([...company][0] || '企')}</span>`;
 const safeLink = (url, label = '打开链接') => url ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(label)} ↗</a>` : '<span class="muted">未填写</span>';
-const state = { applications: [], events: [], stats: null, csrf: '', page: 'overview', stage: '', view: 'list', detail: null, timeOffset: 0, ready: false };
+const state = { applications: [], events: [], stats: null, page: 'overview', stage: '', view: 'list', detail: null, timeOffset: 0, ready: false };
 let toastTimer;
 let loadSequence = 0;
 let detailSequence = 0;
@@ -49,11 +48,10 @@ async function api(path, options = {}) {
   let response;
   try {
     response = await fetch(`/api${path}`, {
-      method: options.method || 'GET', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf },
+      method: options.method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Tracker-Request': 'web' },
       ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     });
   } catch { throw new Error('暂时无法连接服务器，请检查网络后重试。'); }
-  if (response.status === 401) { location.replace('/login'); throw new Error('登录已过期'); }
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || '操作失败，请重试');
   return result;
@@ -281,7 +279,6 @@ document.addEventListener('click', async event => {
     else if ('reset' in d || button.id === 'clear-filters') resetFilters();
     else if ('help' in d || button.id === 'help-button') $('#help-dialog').showModal();
     else if (button.id === 'refresh-button') { await loadData(); }
-    else if (button.id === 'logout-button' || 'logout' in d) { await api('/logout', { method: 'POST', body: {} }); location.replace('/login'); }
     else if ('editApplication' in d) editApplication(state.detail);
     else if ('deleteApplication' in d) await deleteApplication();
     else if ('newEvent' in d) editEvent();
@@ -299,9 +296,6 @@ $('#detail-dialog').addEventListener('close', () => { ++detailSequence; });
 $('#event-filter').addEventListener('change', renderSchedule);
 icons();
 $('#today-label').textContent = format(new Date().toISOString(), { year: 'numeric', weekday: 'short' });
-try {
-  const session = await api('/session'); state.csrf = session.csrf;
-  await loadData();
-} catch (error) { $('#loading').hidden = true; $('#page-error').hidden = false; $('#page-error').textContent = error.message; }
+await loadData();
 // Recalculate time-sensitive reminders while the page stays open; no background notifications.
 setInterval(() => { if (state.ready && !document.hidden) { renderStats(); renderReminders(); renderSchedule(); } }, 60000);

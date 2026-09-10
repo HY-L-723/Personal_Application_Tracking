@@ -1,28 +1,21 @@
-import { test, before, beforeEach, afterEach } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { once } from 'node:events';
 import { createApp } from '../server/app.js';
-import { hashPassword } from '../server/auth.js';
-
-const password = 'test-only-password-2026';
-let passwordHash, instance, server, base, cookie, csrf, time;
-before(async () => { passwordHash = await hashPassword(password); });
+let instance, server, base, time;
 beforeEach(async () => {
   time = Date.parse('2026-09-10T10:00:00Z');
-  instance = createApp({ databasePath: ':memory:', passwordHash, clock: () => time });
+  instance = createApp({ databasePath: ':memory:', clock: () => time });
   server = instance.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
-  const response = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-  cookie = response.headers.get('set-cookie').split(';')[0];
-  csrf = (await response.json()).csrf;
 });
 afterEach(async () => { await new Promise(resolve => server.close(resolve)); instance.db.close(); });
-async function request(path, method = 'GET', body, { authenticated = true, csrfToken = csrf } = {}) {
+async function request(path, method = 'GET', body, { marker = true } = {}) {
   const response = await fetch(base + path, { method, headers: {
-    'Content-Type': 'application/json', ...(authenticated ? { Cookie: cookie, 'X-CSRF-Token': csrfToken } : {}),
+    'Content-Type': 'application/json', ...(marker ? { 'X-Tracker-Request': 'web' } : {}),
   }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: response.status, data: await response.json(), response };
 }
@@ -35,40 +28,33 @@ async function event(applicationId, overrides = {}) {
   const result = await request(`/api/applications/${applicationId}/events`, 'POST', { title: '一面', kind: '面试', due_at: '2026-09-11T15:00:00+08:00', ...overrides });
   assert.equal(result.status, 201); return result.data;
 }
-test('anonymous access cannot read data or application HTML', async () => {
-  assert.equal((await request('/api/dashboard', 'GET', undefined, { authenticated: false })).status, 401);
+test('fresh browsers can open the dashboard and API without cookies or credentials', async () => {
+  assert.equal((await request('/api/dashboard', 'GET', undefined, { marker: false })).status, 200);
   const page = await fetch(base + '/', { redirect: 'manual' });
-  assert.equal(page.status, 302); assert.equal(page.headers.get('location'), '/login');
+  assert.equal(page.status, 200); assert.equal(page.headers.get('set-cookie'), null);
+  assert.match(await page.text(), /我的秋招工作台/);
   assert.equal((await fetch(base + '/assets/index.html')).status, 404);
 });
-test('password validation, cookies and security headers', async () => {
-  assert.equal((await request('/api/login', 'POST', { password: 'incorrect' }, { authenticated: false })).status, 401);
-  const r = await request('/api/login', 'POST', { password }, { authenticated: false });
-  assert.equal(r.status, 200);
-  assert.match(r.response.headers.get('set-cookie'), /HttpOnly/);
-  assert.match(r.response.headers.get('set-cookie'), /SameSite=Strict/);
+test('old login bookmarks go directly home and obsolete auth APIs are removed', async () => {
+  const page = await fetch(base + '/login', { redirect: 'manual' });
+  assert.equal(page.status, 302); assert.equal(page.headers.get('location'), '/');
+  assert.equal((await request('/api/session')).status, 404);
+  assert.equal((await request('/api/login', 'POST', {})).status, 404);
+  assert.equal((await request('/api/logout', 'POST', {})).status, 404);
+  assert.equal((await fetch(base + '/assets/login.js')).status, 404);
+});
+test('response headers remain protective without creating a login session', async () => {
+  const r = await request('/api/dashboard');
+  assert.equal(r.response.headers.get('set-cookie'), null);
   assert.equal(r.response.headers.get('cache-control'), 'no-store');
   assert.match(r.response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
 });
-test('writes require the CSRF token', async () => {
-  assert.equal((await request('/api/applications', 'POST', input(), { csrfToken: 'wrong' })).status, 403);
-  assert.equal((await request('/api/dashboard')).data.applications.length, 0);
-});
-test('cross-site login and repeated wrong passwords are rejected', async () => {
-  const r = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' }, body: JSON.stringify({ password }) });
+test('unrelated websites cannot submit browser writes; ordinary app writes need no login', async () => {
+  assert.equal((await request('/api/applications', 'POST', input(), { marker: false })).status, 403);
+  const r = await fetch(base + '/api/applications', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tracker-Request': 'web', 'Sec-Fetch-Site': 'cross-site' }, body: JSON.stringify(input()) });
   assert.equal(r.status, 403);
-  for (let i = 0; i < 10; i++) assert.equal((await request('/api/login', 'POST', { password: 'wrong' }, { authenticated: false })).status, 401);
-  assert.equal((await request('/api/login', 'POST', { password }, { authenticated: false })).status, 429);
-  time += 16 * 60000;
-  assert.equal((await request('/api/login', 'POST', { password }, { authenticated: false })).status, 200);
-});
-test('logout and expiry invalidate sessions', async () => {
-  assert.equal((await request('/api/logout', 'POST', {})).status, 200);
-  assert.equal((await request('/api/dashboard')).status, 401);
-  const login = await request('/api/login', 'POST', { password }, { authenticated: false });
-  cookie = login.response.headers.get('set-cookie').split(';')[0];
-  time += 8 * 86400000;
-  assert.equal((await request('/api/dashboard')).status, 401);
+  assert.equal((await request('/api/dashboard')).data.applications.length, 0);
+  assert.equal((await request('/api/applications', 'POST', input())).status, 201);
 });
 test('roles in the same company are independent and saved jobs do not count as submitted', async () => {
   const first = await add(); const second = await add({ role: '后端工程师', stage: '已收藏', applied_at: null });
@@ -106,11 +92,9 @@ test('feedback deduplicates records and uses documented history/current-stage ru
   const stats = (await request('/api/dashboard')).data.stats;
   assert.equal(stats.total, 4); assert.equal(stats.feedback, 3); assert.equal(stats.feedbackRate, 75); assert.equal(stats.offers, 2);
 });
-test('two browser sessions share data and stale updates/deletes return conflict', async () => {
+test('independent browsers share data and stale updates/deletes return conflict', async () => {
   const first = await add();
-  const login = await request('/api/login', 'POST', { password }, { authenticated: false });
-  const otherCookie = login.response.headers.get('set-cookie').split(';')[0];
-  const other = await fetch(base + '/api/dashboard', { headers: { Cookie: otherCookie } });
+  const other = await fetch(base + '/api/dashboard');
   assert.equal((await other.json()).applications[0].id, first.id);
   assert.equal((await request(`/api/applications/${first.id}`, 'PUT', { ...first, role: '更新岗位' })).status, 200);
   assert.equal((await request(`/api/applications/${first.id}`, 'PUT', { ...first, role: '旧页面覆盖' })).status, 409);
@@ -142,7 +126,7 @@ test('invalid fields, unsafe URLs, invalid dates and future history are rejected
   assert.equal((await request('/api/dashboard')).data.applications.length, 0);
 });
 test('oversized and malformed JSON requests do not write data', async () => {
-  const invalid = await fetch(base + '/api/applications', { method: 'POST', headers: { Cookie: cookie, 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' }, body: '{bad-json' });
+  const invalid = await fetch(base + '/api/applications', { method: 'POST', headers: { 'X-Tracker-Request': 'web', 'Content-Type': 'application/json' }, body: '{bad-json' });
   assert.equal(invalid.status, 400);
   assert.equal((await request('/api/applications', 'POST', input({ notes: 'x'.repeat(50000) }))).status, 413);
 });
@@ -154,8 +138,8 @@ test('HTML/SQL-like strings remain data, and dates normalize to UTC', async () =
 test('database survives closing and reopening the connection', () => {
   const root = resolve('.local'); mkdirSync(root, { recursive: true });
   const databasePath = join(mkdtempSync(join(root, 'persistence-test-')), 'tracker.db');
-  const first = createApp({ databasePath, passwordHash });
+  const first = createApp({ databasePath });
   first.db.prepare('INSERT INTO applications(company,role,stage,created_at,updated_at) VALUES (?,?,?,?,?)').run('持久化公司', '开发', '已收藏', '2026-09-10', '2026-09-10');
-  first.db.close(); const second = createApp({ databasePath, passwordHash });
+  first.db.close(); const second = createApp({ databasePath });
   assert.equal(second.db.prepare('SELECT company FROM applications').get().company, '持久化公司'); second.db.close();
 });

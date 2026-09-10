@@ -6,12 +6,11 @@
   "description": "个人秋招投递、流程与日程管理",
   "engines": { "node": ">=24.0.0 <25" },
   "scripts": {
-    "setup": "node scripts/setup.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "test": "node --test tests/api.test.js",
     "test:ui": "playwright test",
-    "check": "node --check server/app.js && node --check public/app.js && node --check public/login.js",
+    "check": "node --check server/app.js && node --check public/app.js && node --check server/index.js",
     "backup": "node --env-file-if-exists=.env scripts/backup.js"
   },
   "dependencies": { "express": "^5.1.0" },

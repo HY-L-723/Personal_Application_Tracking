@@ -2,18 +2,13 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { openDatabase, transaction } from './database.js';
-import { token, digest, verifyPassword } from './auth.js';
 import { STAGES, ApiError, fail, text, choice, datetime, applicationInput, eventInput, checkVersion } from './validation.js';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const SESSION_AGE = 7 * 86400000;
-
-export function createApp({ databasePath, passwordHash, secureCookies = false, trustProxy = false, clock = () => Date.now() }) {
-  if (!passwordHash?.startsWith('scrypt:')) throw new Error('请先运行 npm run setup 设置个人访问密码。');
+export function createApp({ databasePath, clock = () => Date.now() }) {
   const db = openDatabase(databasePath);
   const app = express();
   app.disable('x-powered-by');
-  if (trustProxy) app.set('trust proxy', 1);
   app.use((req, res, next) => {
     res.set({
       'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -21,20 +16,9 @@ export function createApp({ databasePath, passwordHash, secureCookies = false, t
       'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
-    if (secureCookies) res.set('Strict-Transport-Security', 'max-age=31536000');
     next();
   });
   app.use(express.json({ limit: '48kb' }));
-  app.use((req, res, next) => {
-    const cookie = req.headers.cookie?.split(';').map(c => c.trim()).find(c => c.startsWith('tracker_session='))?.slice(16);
-    if (cookie && /^[a-f0-9]{64}$/.test(cookie)) {
-      req.sessionHash = digest(cookie);
-      req.session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?').get(req.sessionHash, clock());
-    }
-    next();
-  });
-  const auth = (req, res, next) => req.session ? next() : res.status(401).json({ error: '请先登录' });
-  const cookieOptions = { httpOnly: true, sameSite: 'strict', secure: secureCookies, path: '/' };
   const now = () => new Date(clock()).toISOString();
   function getApplication(id) {
     const record = db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
@@ -62,38 +46,14 @@ export function createApp({ databasePath, passwordHash, secureCookies = false, t
     db.prepare('SELECT 1').get();
     res.json({ ok: true });
   });
-  app.post('/api/login', async (req, res) => {
-    if (!req.is('application/json') || req.headers['sec-fetch-site'] === 'cross-site') fail('请求来源无效', 403);
-    const time = clock();
-    db.prepare('DELETE FROM login_attempts WHERE attempted_at < ?').run(time - 15 * 60000);
-    const ip = req.ip || 'unknown';
-    const attempts = db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(ip = ?), 0) AS personal FROM login_attempts').get(ip);
-    if (attempts.personal >= 10 || attempts.total >= 60) {
-      res.set('Retry-After', '900');
-      fail('尝试次数过多，请在 15 分钟后重试', 429);
-    }
-    db.prepare('INSERT INTO login_attempts(ip, attempted_at) VALUES (?, ?)').run(ip, time);
-    if (!await verifyPassword(req.body?.password, passwordHash)) fail('密码不正确', 401);
-    db.prepare('DELETE FROM login_attempts WHERE ip = ?').run(ip);
-    db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(time);
-    if (req.sessionHash) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(req.sessionHash);
-    const raw = token();
-    const csrf = token();
-    db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(digest(raw), csrf, time + SESSION_AGE);
-    res.cookie('tracker_session', raw, { ...cookieOptions, maxAge: SESSION_AGE });
-    res.json({ csrf });
-  });
-  app.use('/api', auth, (req, res, next) => {
+  // No identity verification: the app opens directly. This header only prevents
+  // unrelated websites from making browser-based writes; it is not a password.
+  app.use('/api', (req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      if (!req.is('application/json') || req.headers['x-csrf-token'] !== req.session.csrf || req.headers['sec-fetch-site'] === 'cross-site') fail('请求验证失败，请刷新页面后重试', 403);
+      if (!req.is('application/json') || req.headers['x-tracker-request'] !== 'web' || req.headers['sec-fetch-site'] === 'cross-site') fail('请求格式或来源无效，请通过网页操作', 403);
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) fail('请求数据格式不正确');
     }
     next();
-  });
-  app.get('/api/session', (req, res) => res.json({ csrf: req.session.csrf }));
-  app.post('/api/logout', (req, res) => {
-    db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(req.sessionHash);
-    res.clearCookie('tracker_session', cookieOptions).json({ ok: true });
   });
   app.get('/api/dashboard', (req, res) => {
     const applications = db.prepare('SELECT * FROM applications ORDER BY updated_at DESC, id DESC').all();
@@ -183,8 +143,8 @@ export function createApp({ databasePath, passwordHash, secureCookies = false, t
     if (!/\.(js|css|svg)$/.test(req.path)) return res.status(404).end();
     next();
   }, express.static(publicDir, { dotfiles: 'deny', index: false, etag: false }));
-  app.get('/login', (req, res) => req.session ? res.redirect('/') : res.sendFile(join(publicDir, 'login.html')));
-  app.get('/', (req, res) => req.session ? res.sendFile(join(publicDir, 'index.html')) : res.redirect('/login'));
+  app.get('/login', (req, res) => res.redirect('/'));
+  app.get('/', (req, res) => res.sendFile(join(publicDir, 'index.html')));
   app.use((req, res) => res.status(404).send('页面不存在'));
   app.use((error, req, res, next) => {
     if (error instanceof ApiError) return res.status(error.status).json({ error: error.message });

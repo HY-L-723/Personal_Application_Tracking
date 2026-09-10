@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 test('full journey: records, history, schedules, filters and deletion', async ({ page }, testInfo) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const company = `旅程科技-${testInfo.project.name}`;
-  await page.goto('/'); await expect(page).toHaveURL(/login/);
-  await page.getByLabel('访问密码').fill('ui-test-only-password-2026');
-  await page.getByRole('button', { name: '进入我的手记' }).click();
+  await page.goto('/');
+  await expect(page).toHaveURL('http://127.0.0.1:3101/');
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '每一步，都有迹可循。' })).toBeVisible();
   await page.getByRole('button', { name: '新增投递', exact: true }).click();
   const editor = page.locator('#editor-dialog');
@@ -65,18 +65,18 @@ test('full journey: records, history, schedules, filters and deletion', async ({
   await detail.getByRole('button', { name: '删除', exact: true }).click();
   await expect(detail).not.toBeVisible();
   await expect(page.getByRole('button', { name: company, exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '退出登录', exact: true }).filter({ visible: true }).click();
-  await expect(page).toHaveURL(/login/);
+  await expect(page.getByRole('button', { name: '退出登录', exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('#dashboard')).toBeVisible();
+  await expect(page).toHaveURL('http://127.0.0.1:3101/');
   expect(errors).toEqual([]);
 });
 test('Beijing dates and overdue reminders work from a non-China timezone', async ({ browser }, testInfo) => {
   const context = await browser.newContext({ timezoneId: 'America/Los_Angeles', viewport: testInfo.project.name === 'mobile' ? { width: 393, height: 851 } : { width: 1440, height: 1000 } });
   const page = await context.newPage(); await page.goto('/login');
-  await page.getByLabel('访问密码').fill('ui-test-only-password-2026');
-  await page.getByRole('button', { name: '进入我的手记' }).click();
+  await expect(page).toHaveURL('http://127.0.0.1:3101/');
   await expect(page.locator('#dashboard')).toBeVisible();
-  const session = await (await context.request.get('/api/session')).json();
-  const headers = { 'X-CSRF-Token': session.csrf };
+  const headers = { 'X-Tracker-Request': 'web' };
   const created = await context.request.post('/api/applications', { headers, data: { company: `时区验证-${testInfo.project.name}`, role: '测试岗位', stage: '已投递', applied_at: '2026-09-01T00:30:00+08:00' } });
   const record = await created.json();
   const event = await context.request.post(`/api/applications/${record.id}/events`, { headers, data: { title: '已过期的测评', kind: '测评截止', due_at: '2026-01-01T08:30:00+08:00' } });

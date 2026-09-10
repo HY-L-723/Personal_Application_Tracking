@@ -10,7 +10,9 @@
 - 每条投递可添加多个日程，支持编辑、完成、取消、恢复和删除。
 - 首页提示未来 7 天和已逾期事项，仅站内提醒，不发送推送。
 - 所有时间按北京时间输入和显示；服务器以 UTC 存储。
-- 个人密码登录，无注册；服务端持久化、会话过期、登录限流、CSRF 验证和多端编辑冲突检测。
+- 无密码、无登录、无注册，打开即用；服务端持久化和多端编辑冲突检测。
+
+网站没有身份验证。部署到公网后，任何能访问网址的人都能查看和修改记录。页面请求保留跨站写入防护，但这不是访问控制。
 
 ## 技术结构
 
@@ -20,11 +22,11 @@ Node 24 的内置 `node:sqlite` 会打印实验性 API 提示，当前项目使�
 
 ```text
 public/          页面、交互与样式
-server/          登录、数据接口、校验与数据库
-scripts/         密码设置和数据库备份
+server/          数据接口、校验与数据库
+scripts/         数据库备份
 tests/           接口和浏览器端验收测试
 deploy/          Nginx HTTPS 反向代理示例
-data/            本地密码哈希和数据库（不进入 Git）
+data/            本地数据库（不进入 Git）
 REQUIREMENTS.md   已确认的第一版需求
 ```
 
@@ -34,17 +36,14 @@ REQUIREMENTS.md   已确认的第一版需求
 
 ```sh
 npm ci
-npm run setup
 npm start
 ```
 
-打开 http://127.0.0.1:3000，输入设置的密码。密码至少 10 个字符，设置时不回显。不需要配置外部数据库。
-
-也可运行 `npm run setup -- --generate` 生成随机密码，保存在 `data/initial-password.txt`。该文件和整个 `data/` 都被 Git 忽略。若本地已由开发流程初始化，直接运行 `npm start`，读取该密码文件即可登录。
+打开 http://127.0.0.1:3000，直接进入投递工作台。首次启动自动创建数据库，不需要初始化密码或配置外部数据库。
 
 可复制 `.env.example` 为 `.env` 修改监听地址或端口。默认仅监听本机；局域网临时测试可将 `HOST` 设为 `0.0.0.0`，手机访问电脑的局域网 IP，需处于同一网络并允许对应端口。正式使用请按下文部署 HTTPS。
 
-重置密码：先停止服务，运行 `npm run setup -- --reset`，再重新启动。投递数据保留，已有会话失效。原随机密码文件不再代表新密码。
+从有密码的旧版本更新时，直接重启服务即可。原有投递、流程历史和日程保持不变；旧密码文件和会话不再被使用，旧 `/login` 地址会跳转到首页。
 
 ## 云服务器部署（Docker Compose）
 
@@ -54,17 +53,14 @@ npm start
 git clone https://github.com/HY-L-723/Personal_Application_Tracking.git
 cd Personal_Application_Tracking
 docker compose build
-docker compose run --rm tracker node scripts/setup.js
 docker compose up -d
 ```
 
-首次密码设置命令交互输入，不在命令行参数中传密码。数据库保存在 `tracker-data` 命名卷，重新构建或重启容器后仍保留。不要使用 `docker compose down -v`，它会删除数据卷。
+首次启动自动创建数据库，保存在 `tracker-data` 命名卷，重新构建或重启容器后仍保留。不要使用 `docker compose down -v`，它会删除数据卷。
 
 按 `deploy/nginx.conf.example` 配置反向代理，替换域名和证书路径，检查配置后重新加载 Nginx。Compose 仅将端口映射到服务器的 `127.0.0.1:3000`，外部通过 HTTPS 入口访问。
 
-生产配置 `COOKIE_SECURE=true`，因此直接用 HTTP 登录不会持久保存会话。`TRUST_PROXY=1` 只适用于应用端口只能经单层可信代理访问的上述拓扑；不要向公网直接开放该端口。
-
-不使用 Docker 时，也可以在服务器安装 Node.js 24，按本地步骤初始化，用进程管理工具运行 `npm start`，配合同样的 HTTPS 反向代理。此时设置 `COOKIE_SECURE=true`，按实际代理情况设置 `TRUST_PROXY`。
+不使用 Docker 时，也可以在服务器安装 Node.js 24，用进程管理工具运行 `npm start`，配合同样的 HTTPS 反向代理。不需要密码或会话相关环境变量。
 
 更新前先备份，再执行 `git pull`、`docker compose build` 和 `docker compose up -d`。部署环境尚未实测，需结合实际服务器校验端口、证书与文件权限。
 
@@ -74,7 +70,7 @@ docker compose up -d
 
 Docker 部署执行 `docker compose exec tracker node scripts/backup.js`，输出备份文件名。可用 `docker compose cp tracker:/app/backups/文件名.db ./文件名.db` 复制到宿主机，再保存到可靠位置。
 
-恢复时先停止服务，将当前完整数据库文件及同名 `-wal`、`-shm` 文件另存作为回退副本，再将备份放回 `data/tracker.db`（Docker 对应数据卷的 `/app/data/tracker.db`）。恢复时不要保留旧库的 WAL/SHM 文件。确保文件归属运行用户后重新启动。密码配置 `auth.json` 独立保存，换机恢复时也可重新执行密码设置。恢复备份后建议重置密码使备份中的旧会话失效。
+恢复时先停止服务，将当前完整数据库文件及同名 `-wal`、`-shm` 文件另存作为回退副本，再将备份放回 `data/tracker.db`（Docker 对应数据卷的 `/app/data/tracker.db`）。恢复时不要保留旧库的 WAL/SHM 文件。确保文件归属运行用户后重新启动，无需恢复任何密码配置。
 
 ## 验证
 

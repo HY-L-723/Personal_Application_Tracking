@@ -31,13 +31,6 @@ export function openDatabase(filename) {
     ) STRICT;
     CREATE INDEX IF NOT EXISTS history_application ON history(application_id, occurred_at, id);
     CREATE INDEX IF NOT EXISTS events_due ON events(status, due_at);
-    CREATE TABLE IF NOT EXISTS sessions (
-      token_hash TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires_at INTEGER NOT NULL
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS login_attempts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, attempted_at INTEGER NOT NULL
-    ) STRICT;
-    CREATE INDEX IF NOT EXISTS attempts_time ON login_attempts(attempted_at);
     PRAGMA user_version = 1;
   `);
   return db;
